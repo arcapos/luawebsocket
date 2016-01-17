@@ -201,7 +201,7 @@ wsGetHandshakeAnswer(const struct handshake *hs, uint8_t *outFrame,
  	b64 = base64(mdbuf, mdlen);
 	BIO_free(bio);
 
-	int written = sprintf((char *)outFrame,
+	size_t written = sprintf((char *)outFrame,
 	    "HTTP/1.1 101 Switching Protocols\r\n"
 	    "%s%s\r\n"
 	    "%s%s\r\n"

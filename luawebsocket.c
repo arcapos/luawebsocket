@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2015 by Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick
+ * Copyright (c) 2014 - 2016 by Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -51,13 +51,13 @@
 static int
 websocket_accept(lua_State *L)
 {
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 	struct sockaddr_storage addr;
 	socklen_t len = sizeof(addr);
 	int socket, ret;
 
-	websocket = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
-	socket = accept(websocket->socket, (struct sockaddr *)&addr, &len);
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+	socket = accept(websock->socket, (struct sockaddr *)&addr, &len);
 
 	if (socket == -1) {
 		return luaL_error(L, "error accepting connection");
@@ -71,8 +71,8 @@ websocket_accept(lua_State *L)
 
 		acc->socket = socket;
 
-		if (websocket->ctx != NULL) {
-			if ((acc->ssl = SSL_new(websocket->ctx)) == NULL)
+		if (websock->ctx != NULL) {
+			if ((acc->ssl = SSL_new(websock->ctx)) == NULL)
 				return luaL_error(L, "error creating SSL "
 				    "context");
 
@@ -94,7 +94,7 @@ websocket_bind(lua_State *L)
 	int fd, error, optval;
 	char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 	const char *port, *host, *cert;
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 
 	cert = NULL;
 
@@ -139,21 +139,20 @@ websocket_bind(lua_State *L)
 		return luaL_error(L, "listen error");
 
 	/* XXX seed_prng(); */
-	websocket = lua_newuserdata(L, sizeof(WEBSOCKET));
-	memset(websocket, 0, sizeof(WEBSOCKET));
+	websock = lua_newuserdata(L, sizeof(WEBSOCKET));
+	memset(websock, 0, sizeof(WEBSOCKET));
 
-	websocket->socket = fd;
+	websock->socket = fd;
 
 	if (cert != NULL) {
 		SSL_library_init();
 		SSL_load_error_strings();
-		if ((websocket->ctx = SSL_CTX_new(SSLv23_method())) == NULL)
+		if ((websock->ctx = SSL_CTX_new(SSLv23_method())) == NULL)
 			return luaL_error(L, "error creating new SSL context");
 
-		if (SSL_CTX_use_certificate_chain_file(websocket->ctx, cert)
-		    != 1)
+		if (SSL_CTX_use_certificate_chain_file(websock->ctx, cert) != 1)
 		    	return luaL_error(L, "error loading certificate");
-		if (SSL_CTX_use_PrivateKey_file(websocket->ctx, cert,
+		if (SSL_CTX_use_PrivateKey_file(websock->ctx, cert,
 		    SSL_FILETYPE_PEM) != 1)
 			return luaL_error(L, "error loading private key");
 	}
@@ -167,17 +166,17 @@ websocket_handshake(lua_State *L)
 {
 	struct handshake hs;
 	size_t nread;
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 	char *buf;
 
 	nullHandshake(&hs);
-	websocket = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
 
 	buf = malloc(BUFSIZE);
-	if (websocket->ssl)
-		nread = SSL_read(websocket->ssl, buf, BUFSIZE);
+	if (websock->ssl)
+		nread = SSL_read(websock->ssl, buf, BUFSIZE);
 	else
-		nread = recv(websocket->socket, buf, BUFSIZE, 0);
+		nread = recv(websock->socket, buf, BUFSIZE, 0);
 	buf[nread] = '\0';
 
 	if (wsParseHandshake((unsigned char *)buf, nread, &hs) ==
@@ -185,18 +184,18 @@ websocket_handshake(lua_State *L)
 		if (!strcmp(hs.resource, luaL_checkstring(L, 2))) {
 			wsGetHandshakeAnswer(&hs, (unsigned char *)buf, &nread);
 			freeHandshake(&hs);
-			if (websocket->ssl)
-				SSL_write(websocket->ssl, buf, nread);
+			if (websock->ssl)
+				SSL_write(websock->ssl, buf, nread);
 			else
-				send(websocket->socket, buf, nread, 0);
+				send(websock->socket, buf, nread, 0);
 			buf[nread] = '\0';
 			lua_pushboolean(L, 1);
 		} else {
 			nread = sprintf(buf, "HTTP/1.1 404 Not Found\r\n\r\n");
-			if (websocket->ssl)
-				SSL_write(websocket->ssl, buf, nread);
+			if (websock->ssl)
+				SSL_write(websock->ssl, buf, nread);
 			else
-				send(websocket->socket, buf, nread, 0);
+				send(websock->socket, buf, nread, 0);
 			lua_pushnil(L);
 		}
 	} else {
@@ -205,10 +204,10 @@ websocket_handshake(lua_State *L)
 			"%s%s\r\n\r\n",
 			versionField,
 			version);
-		if (websocket->ssl)
-			SSL_write(websocket->ssl, buf, nread);
+		if (websock->ssl)
+			SSL_write(websock->ssl, buf, nread);
 		else
-			send(websocket->socket, buf, nread, 0);
+			send(websock->socket, buf, nread, 0);
 		lua_pushnil(L);
 	}
 	free(buf);
@@ -218,24 +217,24 @@ websocket_handshake(lua_State *L)
 static int
 websocket_recv(lua_State *L)
 {
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 	char *buf;
 	unsigned char *data;
 	size_t nread, len, datasize;
 	int type;
 
-	websocket = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
 
 	buf = malloc(BUFSIZE);
 
 	nread = len = 0;
 	type = WS_INCOMPLETE_FRAME;
 	do {
-		if (websocket->ssl)
-			nread = SSL_read(websocket->ssl, buf + len,
+		if (websock->ssl)
+			nread = SSL_read(websock->ssl, buf + len,
 			    BUFSIZE - len);
 		else
-			nread = recv(websocket->socket, buf + len,
+			nread = recv(websock->socket, buf + len,
 			    BUFSIZE - len, 0);
 		if (nread <= 0) {
 			lua_pushnil(L);
@@ -249,25 +248,25 @@ websocket_recv(lua_State *L)
 		case WS_CLOSING_FRAME:
 			wsMakeFrame(NULL, 0, (unsigned char *)buf, &datasize,
 			    WS_CLOSING_FRAME);
-			if (websocket->ssl) {
-				SSL_write(websocket->ssl, buf, datasize);
-				SSL_shutdown(websocket->ssl);
-				SSL_free(websocket->ssl);
-				websocket->ssl = NULL;
+			if (websock->ssl) {
+				SSL_write(websock->ssl, buf, datasize);
+				SSL_shutdown(websock->ssl);
+				SSL_free(websock->ssl);
+				websock->ssl = NULL;
 			} else {
-				send(websocket->socket, buf, datasize, 0);
-				close(websocket->socket);
-				websocket->socket = -1;
+				send(websock->socket, buf, datasize, 0);
+				close(websock->socket);
+				websock->socket = -1;
 			}
 			lua_pushnil(L);
 			break;
 		case WS_PING_FRAME:
 			wsMakeFrame(NULL, 0, (unsigned char *)buf, &datasize,
 			    WS_PONG_FRAME);
-			if (websocket->ssl)
-				SSL_write(websocket->ssl, buf, datasize);
+			if (websock->ssl)
+				SSL_write(websock->ssl, buf, datasize);
 			else
-				send(websocket->socket, buf, datasize, 0);
+				send(websock->socket, buf, datasize, 0);
 			len = 0;
 			type = WS_INCOMPLETE_FRAME;
 			break;
@@ -290,18 +289,18 @@ websocket_send(lua_State *L)
 	char *buf;
 	const char *data;
 	size_t datasize, framesize;
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 
-	websocket = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
 	buf = malloc(BUFSIZE);
 
 	data = luaL_checklstring(L, 2, &datasize);
-	wsMakeFrame((unsigned char *)data, datasize, (unsigned char *)buf,
+	wsMakeFrame((const uint8_t *)data, datasize, (unsigned char *)buf,
 	    &framesize, WS_TEXT_FRAME);
-	if (websocket->ssl)
-		SSL_write(websocket->ssl, buf, framesize);
+	if (websock->ssl)
+		SSL_write(websock->ssl, buf, framesize);
 	else
-		send(websocket->socket, buf, framesize, 0);
+		send(websock->socket, buf, framesize, 0);
 	free(buf);
 	return 0;
 }
@@ -309,31 +308,31 @@ websocket_send(lua_State *L)
 static int
 websocket_socket(lua_State *L)
 {
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 
-	websocket = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
-	lua_pushinteger(L, websocket->socket);
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+	lua_pushinteger(L, websock->socket);
 	return 1;
 }
 
 static int
 websocket_close(lua_State *L)
 {
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 
-	websocket = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
-	if (websocket->ssl != NULL) {
-		SSL_set_shutdown(websocket->ssl,
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+	if (websock->ssl != NULL) {
+		SSL_set_shutdown(websock->ssl,
 		    SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN);
-		SSL_free(websocket->ssl);
-		websocket->ssl = NULL;
-	} else if (websocket->socket != -1) {
-		close(websocket->socket);
-		websocket->socket = -1;
+		SSL_free(websock->ssl);
+		websock->ssl = NULL;
+	} else if (websock->socket != -1) {
+		close(websock->socket);
+		websock->socket = -1;
 	}
-	if (websocket->ctx != NULL) {
-		SSL_CTX_free(websocket->ctx);
-		websocket->ctx = NULL;
+	if (websock->ctx != NULL) {
+		SSL_CTX_free(websock->ctx);
+		websock->ctx = NULL;
 	}
 	return 0;
 }
@@ -341,20 +340,20 @@ websocket_close(lua_State *L)
 static int
 websocket_shutdown(lua_State *L)
 {
-	WEBSOCKET *websocket;
+	WEBSOCKET *websock;
 
-	websocket = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
-	if (websocket->ssl != NULL) {
-		SSL_shutdown(websocket->ssl);
-		SSL_free(websocket->ssl);
-		websocket->ssl = NULL;
-	} else if (websocket->socket != -1) {
-		close(websocket->socket);
-		websocket->socket = -1;
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+	if (websock->ssl != NULL) {
+		SSL_shutdown(websock->ssl);
+		SSL_free(websock->ssl);
+		websock->ssl = NULL;
+	} else if (websock->socket != -1) {
+		close(websock->socket);
+		websock->socket = -1;
 	}
-	if (websocket->ctx != NULL) {
-		SSL_CTX_free(websocket->ctx);
-		websocket->ctx = NULL;
+	if (websock->ctx != NULL) {
+		SSL_CTX_free(websock->ctx);
+		websock->ctx = NULL;
 	}
 	return 0;
 }
