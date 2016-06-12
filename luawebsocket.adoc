@@ -1,0 +1,65 @@
+Implementing WebSocket Servers
+------------------------------
+
+The websocket module is used to implement WebSocket network servers. The
+websocket module supports both encrypted (wss://) and unencrypted
+(ws://) WebSockets.
+
+Creating WebSockets servers
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+bind(address, port [, pem-file])
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Create a new WebSocket server, bind it to address and the port
+specified. If the optional parameter pem-file is passed, it must be the
+path name of a valid PEM-file containing the server secret key and
+certificate in PEM-format. A secure WebSocket is created and all
+communication is encrypted using SSL/TLS. If pem-file is omitted, an
+unencrypted WebSocket is created.
+
+Accepting and closing connections
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+websock:accept()
+^^^^^^^^^^^^^^^^
+
+Accept a new connection and return a new WebSocket object.
+
+websock:handshake(request)
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Perform the WebSocket handshake on a websocket. The handshake only
+succeeds if the client request matches the request parameter.
+
+websock:close()
+^^^^^^^^^^^^^^^
+
+Close a WebSocket. This does not perform an SSL/TLS shutdown if websock
+is a secure WebSocket.
+
+websock:shutdown()
+^^^^^^^^^^^^^^^^^^
+
+Close a WebSocket, if websock is a secure WebSocket, a proper SSL/TLS
+shutdown is performed.
+
+Transferring data
+~~~~~~~~~~~~~~~~~
+
+websock:send(data)
+^^^^^^^^^^^^^^^^^^
+
+Send data over the socket.
+
+websock:recv()
+^^^^^^^^^^^^^^
+
+Receive data from a socket. Returns the data received or nil if client
+closed the connection or an error occured.
+
+websock:socket()
+^^^^^^^^^^^^^^^^
+
+Return the underlying socket as an integer, e.g. to perform select() on
+it.
