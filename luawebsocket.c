@@ -377,6 +377,95 @@ websocket_shutdown(lua_State *L)
 	return 0;
 }
 
+static int
+websocket_select(lua_State *L) {
+	WEBSOCKET *websock;
+	fd_set readfds, writefds;
+	int ret, timeout, rtop, wtop, max_fd;
+	struct timeval tv;
+
+	FD_ZERO(&readfds); FD_ZERO(&writefds);
+
+	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
+
+	FD_SET(websock->socket, &readfds); FD_SET(websock->socket, &writefds);
+	max_fd = websock->socket;
+
+	if (lua_istable(L, 2)) {
+		lua_pushnil(L);
+		while (lua_next(L, 2) != 0) {
+			if (lua_isnumber(L, -1)) {
+				int fd = (int) lua_tonumber(L, -1);
+				if (fd > 0)
+					FD_SET(fd, &readfds);
+				if (fd > max_fd)
+					max_fd = fd;
+			}
+			lua_pop(L, 1);
+		}
+	}
+
+	if (lua_istable(L, 3)) {
+		lua_pushnil(L);
+		while (lua_next(L, 3) != 0) {
+			if (lua_isnumber(L, -1)) {
+				int fd = (int) lua_tonumber(L, -1);
+				if (fd > 0)
+					FD_SET(fd, &writefds);
+				if (fd > max_fd)
+					max_fd = fd;
+			}
+			lua_pop(L, 1);
+		}
+	}
+
+	if (!lua_isnil(L, 4) && lua_isnumber(L, 4))
+		timeout = (int) lua_tonumber(L, 4);
+	else
+		timeout = -1;
+
+	tv.tv_sec = (int) lua_tonumber(L, 4);
+	tv.tv_usec = 0;
+
+	ret = select(max_fd + 1, &readfds, &writefds, NULL, timeout >= 0 ? &tv : NULL);
+	if (ret > 0) {
+		if (FD_ISSET(websock->socket, &readfds)) {
+			lua_pushinteger(L, websock->socket);
+			lua_pushnil(L);
+			return 2;
+		}
+
+		lua_newtable(L); rtop = lua_gettop(L);
+		lua_newtable(L); wtop = lua_gettop(L);
+
+		int fd;
+		int ir = 0, iw = 0;
+		for (fd = 0; fd < max_fd + 1; fd++) {
+			if (FD_ISSET(fd, &readfds)) {
+				lua_pushnumber(L, (lua_Number) fd);
+				lua_rawseti(L, rtop, ir + 1);
+				ir++;
+			} else if (FD_ISSET(fd, &writefds)){
+				lua_pushnumber(L, (lua_Number) fd);
+				lua_rawseti(L, wtop, iw + 1);
+				iw++;
+			}
+		}
+
+		return 2;
+	} else if (ret == 0) {
+		lua_pushnil(L);
+		lua_pushnil(L);
+		lua_pushstring(L, "timeout");
+		return 3;
+	}
+
+	lua_pushnil(L);
+	lua_pushnil(L);
+	lua_pushstring(L, "select failed");
+	return 3;
+}
+
 int
 luaopen_websocket(lua_State *L)
 {
@@ -392,6 +481,7 @@ luaopen_websocket(lua_State *L)
 		{ "recv", 		websocket_recv},
 		{ "send",		websocket_send },
 		{ "socket",		websocket_socket },
+		{ "select",		websocket_select },
 		{ NULL, NULL }
 	};
 	if (luaL_newmetatable(L, WEBSOCKET_METATABLE)) {
