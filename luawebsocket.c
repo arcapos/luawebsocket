@@ -162,6 +162,25 @@ websocket_bind(lua_State *L)
 }
 
 static int
+check_resources(lua_State *L, char *resource)
+{
+	if (lua_isstring(L, 2) && !strcmp(resource, luaL_checkstring(L, 2)))
+		return 1;
+
+	if (lua_istable(L, 2)) {
+		lua_pushnil(L);
+		while (lua_next(L, 2) != 0) {
+			if (!strcmp(resource, luaL_checkstring(L, -1)))
+				return 1;
+
+			lua_pop(L, 1);
+		}
+	}
+
+	return 0;
+}
+
+static int
 websocket_handshake(lua_State *L)
 {
 	struct handshake hs;
@@ -181,15 +200,15 @@ websocket_handshake(lua_State *L)
 
 	if (wsParseHandshake((unsigned char *)buf, nread, &hs) ==
 	    WS_OPENING_FRAME) {
-		if (!strcmp(hs.resource, luaL_checkstring(L, 2))) {
+		if (check_resources(L, hs.resource)) {
 			wsGetHandshakeAnswer(&hs, (unsigned char *)buf, &nread);
+			lua_pushstring(L, hs.resource);
 			freeHandshake(&hs);
 			if (websock->ssl)
 				SSL_write(websock->ssl, buf, nread);
 			else
 				send(websock->socket, buf, nread, 0);
 			buf[nread] = '\0';
-			lua_pushboolean(L, 1);
 		} else {
 			nread = sprintf(buf, "HTTP/1.1 404 Not Found\r\n\r\n");
 			if (websock->ssl)
