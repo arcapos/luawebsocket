@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 - 2016 by Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick
+ * Copyright (c) 2014 - 2024 by Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -215,71 +215,50 @@ websocket_handshake(lua_State *L)
 }
 
 static int
+websocket_read(void *data, char *dest, size_t len)
+{
+	WEBSOCKET *websock = (WEBSOCKET *)data;
+
+	if (websock->ssl)
+		return SSL_read(websock->ssl, dest, len);
+	else
+		return recv(websock->socket, dest, len, 0);
+}
+
+static int
+websocket_write(void *data, char *dest, size_t len)
+{
+	WEBSOCKET *websock = (WEBSOCKET *)data;
+
+	if (websock->ssl)
+		return SSL_write(websock->ssl, dest, len);
+	else
+		return send(websock->socket, dest, len, 0);
+}
+
+static int
 websocket_recv(lua_State *L)
 {
 	WEBSOCKET *websock;
 	char *buf;
-	unsigned char *data;
-	size_t nread, len, datasize;
-	int type;
+	size_t len;
 
 	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
 
-	buf = malloc(BUFSIZE);
-
-	nread = len = 0;
-	type = WS_INCOMPLETE_FRAME;
-	do {
-		if (websock->ssl)
-			nread = SSL_read(websock->ssl, buf + len,
-			    BUFSIZE - len);
-		else
-			nread = recv(websock->socket, buf + len,
-			    BUFSIZE - len, 0);
-		if (nread <= 0) {
-			lua_pushnil(L);
-			type = WS_EMPTY_FRAME;
+	if (wsRead(&buf, websocket_read, websocket_write, websock)) {
+		if (websock->ssl) {
+			SSL_shutdown(websock->ssl);
+			SSL_free(websock->ssl);
+			websock->ssl = NULL;
 		} else {
-			len += nread;
-			type = wsParseInputFrame((unsigned char *)buf, len,
-			    &data, &datasize);
+			close(websock->socket);
+			websock->socket = -1;
 		}
-		switch (type) {
-		case WS_CLOSING_FRAME:
-			wsMakeFrame(NULL, 0, (unsigned char *)buf, &datasize,
-			    WS_CLOSING_FRAME);
-			if (websock->ssl) {
-				SSL_write(websock->ssl, buf, datasize);
-				SSL_shutdown(websock->ssl);
-				SSL_free(websock->ssl);
-				websock->ssl = NULL;
-			} else {
-				send(websock->socket, buf, datasize, 0);
-				close(websock->socket);
-				websock->socket = -1;
-			}
-			lua_pushnil(L);
-			break;
-		case WS_PING_FRAME:
-			wsMakeFrame(NULL, 0, (unsigned char *)buf, &datasize,
-			    WS_PONG_FRAME);
-			if (websock->ssl)
-				SSL_write(websock->ssl, buf, datasize);
-			else
-				send(websock->socket, buf, datasize, 0);
-			len = 0;
-			type = WS_INCOMPLETE_FRAME;
-			break;
-		case WS_TEXT_FRAME:
-			lua_pushlstring(L, (const char *)data, datasize);
-			break;
-		case WS_INCOMPLETE_FRAME:
-			break;
-		default:
-			lua_pushnil(L);
-		}
-	} while (type == WS_INCOMPLETE_FRAME);
-	free(buf);
+		lua_pushnil(L);
+	} else
+		lua_pushlstring(L, (const char *)buf, len);
+		free(buf);
+	}
 	return 1;
 }
 

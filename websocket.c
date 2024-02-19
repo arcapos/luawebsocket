@@ -1,12 +1,12 @@
 /*
- * Copyright (C) 2014 Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick
+ * Copyright (C) 2014 - 2024 Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick
  * Copyright (c) 2014 Putilov Andrey
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
  * The above copyright notice and this permission notice shall be included in
@@ -16,9 +16,9 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #include <openssl/opensslconf.h>
@@ -27,6 +27,7 @@
 #include <openssl/evp.h>
 
 #include <assert.h>
+#include <endian.h>
 #include <stdlib.h>
 #include <netinet/in.h>
 #include <string.h>
@@ -35,6 +36,8 @@
 
 #include "base64.h"
 #include "websocket.h"
+
+#define INITIAL_BUFSIZE		256
 
 void
 nullHandshake(struct handshake *hs)
@@ -111,24 +114,24 @@ wsParseHandshake(const uint8_t *inputFrame, size_t inputLength,
 	/* parse next lines */
 	while (inputPtr < endPtr && inputPtr[0] != '\r'
 	    && inputPtr[1] != '\n') {
-		if (!memcmp(inputPtr, hostField, strlen(hostField))) {
+		if (!strncasecmp(inputPtr, hostField, strlen(hostField))) {
 			inputPtr += strlen(hostField);
 			free(hs->host);
 			hs->host = getUptoLinefeed(inputPtr);
-		} else if (!memcmp(inputPtr, originField,
+		} else if (!strncasecmp(inputPtr, originField,
 		    strlen(originField))) {
 			inputPtr += strlen(originField);
 			free(hs->origin);
 			hs->origin = getUptoLinefeed(inputPtr);
-		} else if (!memcmp(inputPtr, protocolField,
+		} else if (!strncasecmp(inputPtr, protocolField,
 		    strlen(protocolField))) {
 			inputPtr += strlen(protocolField);
 			subprotocolFlag = 1;
-		} else if (!memcmp(inputPtr, keyField, strlen(keyField))) {
+		} else if (!strncasecmp(inputPtr, keyField, strlen(keyField))) {
 			inputPtr += strlen(keyField);
 			free(hs->key);
 			hs->key = getUptoLinefeed(inputPtr);
-		} else if (!memcmp(inputPtr, versionField,
+		} else if (!strncasecmp(inputPtr, versionField,
 		    strlen(versionField))) {
 			char *versionString;
 
@@ -137,7 +140,7 @@ wsParseHandshake(const uint8_t *inputFrame, size_t inputLength,
 			if (memcmp(versionString, version, strlen(version)))
 				versionMismatch = 1;
 			free(versionString);
-		} else if (!memcmp(inputPtr, connectionField,
+		} else if (!strncasecmp(inputPtr, connectionField,
 		    strlen(connectionField))) {
 			char *connectionValue;
 
@@ -147,7 +150,7 @@ wsParseHandshake(const uint8_t *inputFrame, size_t inputLength,
 			if (strcasestr(connectionValue, upgrade) != NULL)
 				connectionFlag = 1;
 			free(connectionValue);
-		} else if (!memcmp(inputPtr, upgradeField,
+		} else if (!strncasecmp(inputPtr, upgradeField,
 		    strlen(upgradeField))) {
 			char *compare;
 
@@ -242,8 +245,8 @@ wsMakeFrame(const uint8_t *data, size_t dataLength, uint8_t *outFrame,
 	*outLength += dataLength;
 }
 
-static size_t
-getPayloadLength(const uint8_t *inputFrame, size_t inputLength,
+size_t
+wsGetPayloadLength(const uint8_t *inputFrame, size_t inputLength,
     uint8_t *payloadFieldExtraBytes, enum wsFrameType *frameType)
 {
 	size_t payloadLength = inputFrame[1] & 0x7F;
@@ -260,25 +263,17 @@ getPayloadLength(const uint8_t *inputFrame, size_t inputLength,
 	}
 
 	if (payloadLength == 0x7E) {
-		uint16_t payloadLength16b = 0;
-
 		*payloadFieldExtraBytes = 2;
-		memcpy(&payloadLength16b, &inputFrame[2],
-		    *payloadFieldExtraBytes);
-		payloadLength = payloadLength16b;
-	} else if (payloadLength == 0x7F) {
-		uint64_t payloadLength64b = 0;
 
+		payloadLength = be16toh(*(uint16_t *)&inputFrame[2]);
+	} else if (payloadLength == 0x7F) {
 		*payloadFieldExtraBytes = 8;
-		memcpy(&payloadLength64b, &inputFrame[2],
-		    *payloadFieldExtraBytes);
-		if (payloadLength64b > SIZE_MAX) {
+
+		if (payloadLength > SIZE_MAX) {
 			*frameType = WS_ERROR_FRAME;
 			return 0;
 		}
-		payloadLength = (size_t)payloadLength64b;
 	}
-
 	return payloadLength;
 }
 
@@ -287,16 +282,6 @@ wsParseInputFrame(uint8_t *inputFrame, size_t inputLength, uint8_t **dataPtr,
     size_t *dataLength)
 {
 	assert(inputFrame && inputLength);
-
-	if (inputLength < 2)
-		return WS_INCOMPLETE_FRAME;
-
-	if ((inputFrame[0] & 0x70) != 0x0)	/* checks extensions off */
-		return WS_ERROR_FRAME;
-	if ((inputFrame[0] & 0x80) != 0x80)	/* no continuation frames */
-		return WS_ERROR_FRAME;		/* so, fin flag must be set */
-	if ((inputFrame[1] & 0x80) != 0x80)	/* checks masking bit */
-		return WS_ERROR_FRAME;
 
 	uint8_t opcode = inputFrame[0] & 0x0F;
 	if (opcode == WS_TEXT_FRAME ||
@@ -307,16 +292,10 @@ wsParseInputFrame(uint8_t *inputFrame, size_t inputLength, uint8_t **dataPtr,
 		enum wsFrameType frameType = opcode;
 
 		uint8_t payloadFieldExtraBytes = 0;
-		size_t payloadLength = getPayloadLength(inputFrame, inputLength,
-		    &payloadFieldExtraBytes, &frameType);
+		size_t payloadLength = wsGetPayloadLength(inputFrame,
+		    inputLength, &payloadFieldExtraBytes, &frameType);
 		if (payloadLength > 0) {
 			size_t i;
-
-			/* 4 - maskingKey, 2 - header */
-			if (payloadLength < inputLength - 6 -
-			    payloadFieldExtraBytes)
-				return WS_INCOMPLETE_FRAME;
-
 			uint8_t *maskingKey = &inputFrame[2 +
 			     payloadFieldExtraBytes];
 
@@ -329,7 +308,102 @@ wsParseInputFrame(uint8_t *inputFrame, size_t inputLength, uint8_t **dataPtr,
 			for (i = 0; i < *dataLength; i++)
 				(*dataPtr)[i] = (*dataPtr)[i] ^ maskingKey[i%4];
 		}
-		return frameType;
+		return opcode;
 	}
 	return WS_ERROR_FRAME;
+}
+
+enum wsFrameType
+wsRead(char **dest, size_t *destlen, int(*readfunc)(void *, char *, size_t),
+    int(*writefunc)(void *, char *, size_t), void *client_data)
+{
+	unsigned char *data;
+	char *buf;
+	size_t bufsize, nread, len, datasize;
+	int type;
+	uint8_t payloadFieldExtraBytes = 0;
+	size_t payloadLength;
+	enum wsFrameType frameType;
+
+	bufsize = INITIAL_BUFSIZE;
+	buf = malloc(bufsize);
+	if (buf == NULL)
+		return -1;
+
+	nread = len = 0;
+	type = WS_INCOMPLETE_FRAME;
+	do {
+		/*
+		 * The most common frame header is six bytes long, try to read
+		 * 6 bytes and then determine the actual payload size and read
+		 * the remaining data.
+		 */
+		do {
+			nread = readfunc(client_data, buf, 6);
+			if (nread == -1) {	/* remote closed */
+				free(buf);
+				return -1;
+			}
+			len += nread;
+		} while (len < 2);	/* 2 is the minimum */
+
+		if (((buf[0] & 0x70) != 0x0) || ((buf[0] & 0x80) != 0x80) ||
+		    ((buf[1] & 0x80) != 0x80)) {
+			free(buf);
+			return -1;
+		}
+
+		payloadLength = wsGetPayloadLength(buf, len,
+		    &payloadFieldExtraBytes, &frameType);
+
+		/* Ensure buf can hold the complete payload */
+		if (6 + payloadFieldExtraBytes + payloadLength > bufsize) {
+			bufsize = 6 + payloadFieldExtraBytes + payloadLength;
+			buf = realloc(buf, bufsize);
+			if (buf == NULL)
+				return -1;
+		}
+
+		do {
+			nread = readfunc(client_data, buf + len, payloadLength +
+			    payloadFieldExtraBytes);
+			len += nread;
+		} while (len < 6 + payloadFieldExtraBytes + payloadLength);
+
+		type = wsParseInputFrame((unsigned char *)buf, len, &data,
+			&datasize);
+
+		switch (type) {
+		case WS_CLOSING_FRAME:
+			wsMakeFrame(NULL, 0, (unsigned char *)buf, &datasize,
+			    WS_CLOSING_FRAME);
+			writefunc(client_data, buf, datasize);
+			free(buf);
+			return -1;
+		case WS_PING_FRAME:
+			wsMakeFrame(NULL, 0, (unsigned char *)buf, &datasize,
+			    WS_PONG_FRAME);
+			writefunc(client_data, buf, datasize);
+			len = 0;
+			type = WS_INCOMPLETE_FRAME;
+			break;
+		case WS_TEXT_FRAME:
+			data[datasize] = '\0';
+			*dest = strdup(data);
+			if (destlen != NULL)
+				*destlen = datasize;
+			if (*dest == NULL) {
+				free(buf);
+				return -1;
+			}
+			break;
+		case WS_INCOMPLETE_FRAME:
+			break;
+		default:
+			free(buf);
+			return -1;
+		}
+	} while (type == WS_INCOMPLETE_FRAME);
+	free(buf);
+	return 0;
 }

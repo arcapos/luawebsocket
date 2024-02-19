@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2014 Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick.
+ * Copyright (c) 2014 - 2024 Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick.
  * Copyright (c) 2014 Putilov Andrey
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
  * The above copyright notice and this permission notice shall be included in
@@ -16,9 +16,9 @@
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 #ifndef __WEBSOCKET_H__
@@ -59,26 +59,33 @@ enum wsState {
 };
 
 struct handshake {
-	char *host;
-	char *origin;
-	char *key;
-	char *resource;
+	char		*host;
+	char		*origin;
+	char		*key;
+	char		*resource;
 	enum wsFrameType frameType;
 };
 
-extern enum wsFrameType wsParseHandshake(const uint8_t *inputFrame,
-    size_t inputLength, struct handshake *hs);
+extern enum wsFrameType wsParseHandshake(const uint8_t *, size_t,
+    struct handshake *);
 
-extern void wsGetHandshakeAnswer(const struct handshake *hs, uint8_t *outFrame,
-    size_t *outLength);
+extern void wsGetHandshakeAnswer(const struct handshake *, uint8_t *,
+    size_t *);
 
-extern void wsMakeFrame(const uint8_t *data, size_t dataLength,
-    uint8_t *outFrame, size_t *outLength, enum wsFrameType frameType);
+extern void wsMakeFrame(const uint8_t *, size_t, uint8_t *, size_t *,
+    enum wsFrameType);
 
-enum wsFrameType wsParseInputFrame(uint8_t *inputFrame, size_t inputLength,
-    uint8_t **dataPtr, size_t *dataLength);
+extern size_t wsGetPayloadLength(const uint8_t *, size_t, uint8_t *,
+    enum wsFrameType *);
 
-extern void nullHandshake(struct handshake *hs);
-extern void freeHandshake(struct handshake *hs);
+extern enum wsFrameType wsParseInputFrame(uint8_t *, size_t, uint8_t **,
+    size_t *);
+
+extern enum wsFrameType wsRead(char **dest, size_t *,
+    int(*readfunc)(void *, char *, size_t),
+    int(*writefunc)(void *, char *, size_t), void *);
+
+extern void nullHandshake(struct handshake *);
+extern void freeHandshake(struct handshake *);
 
 #endif  /* __WEBSOCKET_H__ */
