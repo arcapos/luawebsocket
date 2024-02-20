@@ -245,7 +245,7 @@ websocket_recv(lua_State *L)
 
 	websock = luaL_checkudata(L, 1, WEBSOCKET_METATABLE);
 
-	if (wsRead(&buf, websocket_read, websocket_write, websock)) {
+	if (wsRead(&buf, &len, websocket_read, websocket_write, websock)) {
 		if (websock->ssl) {
 			SSL_shutdown(websock->ssl);
 			SSL_free(websock->ssl);
@@ -255,7 +255,7 @@ websocket_recv(lua_State *L)
 			websock->socket = -1;
 		}
 		lua_pushnil(L);
-	} else
+	} else {
 		lua_pushlstring(L, (const char *)buf, len);
 		free(buf);
 	}
