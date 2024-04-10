@@ -221,7 +221,7 @@ void
 wsMakeFrame(const uint8_t *data, size_t dataLength, uint8_t *outFrame,
     size_t *outLength, enum wsFrameType frameType)
 {
-	assert(outFrame && *outLength);
+	assert(outFrame && outLength);
 	assert(frameType < 0x10);
 	if (dataLength > 0)
 		assert(data);
@@ -314,8 +314,9 @@ wsParseInputFrame(uint8_t *inputFrame, size_t inputLength, uint8_t **dataPtr,
 }
 
 enum wsFrameType
-wsRead(char **dest, size_t *destlen, int(*readfunc)(void *, char *, size_t),
-    int(*writefunc)(void *, char *, size_t), void *client_data)
+wsRead(char **dest, size_t *destlen,
+    int(*readfunc)(void *, unsigned char *, size_t),
+    int(*writefunc)(void *, unsigned char *, size_t), void *client_data)
 {
 	unsigned char *data;
 	char *buf;
@@ -340,7 +341,7 @@ wsRead(char **dest, size_t *destlen, int(*readfunc)(void *, char *, size_t),
 		 */
 		do {
 			nread = readfunc(client_data, buf, 6);
-			if (nread == -1) {	/* remote closed */
+			if (nread <= 0) {	/* remote closed */
 				free(buf);
 				return -1;
 			}
@@ -367,6 +368,10 @@ wsRead(char **dest, size_t *destlen, int(*readfunc)(void *, char *, size_t),
 		do {
 			nread = readfunc(client_data, buf + len, payloadLength +
 			    payloadFieldExtraBytes);
+			if (nread <= 0) {
+				free(buf);
+				return -1;
+			}
 			len += nread;
 		} while (len < 6 + payloadFieldExtraBytes + payloadLength);
 
@@ -381,7 +386,8 @@ wsRead(char **dest, size_t *destlen, int(*readfunc)(void *, char *, size_t),
 			free(buf);
 			return -1;
 		case WS_PING_FRAME:
-			wsMakeFrame(NULL, 0, (unsigned char *)buf, &datasize,
+			data[datasize] = '\0';
+			wsMakeFrame(data, datasize, (unsigned char *)buf, &datasize,
 			    WS_PONG_FRAME);
 			writefunc(client_data, buf, datasize);
 			len = 0;

@@ -20,7 +20,7 @@
  * IN THE SOFTWARE.
  */
 
-/* base64 encoding for the Lua websockets module */
+/* base64 encoding */
 
 /*
  * Based on:
