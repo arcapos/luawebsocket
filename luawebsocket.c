@@ -355,11 +355,7 @@ luaopen_websocket(lua_State *L)
 		{ NULL, NULL }
 	};
 	if (luaL_newmetatable(L, WEBSOCKET_METATABLE)) {
-#if LUA_VERSION_NUM >= 502
 		luaL_setfuncs(L, websocket_methods, 0);
-#else
-		luaL_register(L, NULL, websocket_methods);
-#endif
 		lua_pushliteral(L, "__gc");
 		lua_pushcfunction(L, websocket_close);
 		lua_settable(L, -3);
@@ -374,14 +370,9 @@ luaopen_websocket(lua_State *L)
 	}
 	lua_pop(L, 1);
 
-#if LUA_VERSION_NUM >= 502
 	luaL_newlib(L, methods);
-#else
-	luaL_register(L, LUA_WEBSOCKETLIBNAME, methods);
-#endif
-
 	lua_pushliteral(L, "_COPYRIGHT");
-	lua_pushliteral(L, "Copyright (C) 2014 by "
+	lua_pushliteral(L, "Copyright (C) 2014 - 2024 by "
 	    "micro systems marc balmer");
 	lua_settable(L, -3);
 	lua_pushliteral(L, "_DESCRIPTION");
