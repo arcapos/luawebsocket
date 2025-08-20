@@ -215,7 +215,7 @@ websocket_handshake(lua_State *L)
 }
 
 static int
-websocket_read(void *data, char *dest, size_t len)
+websocket_read(void *data, unsigned char *dest, size_t len)
 {
 	WEBSOCKET *websock = (WEBSOCKET *)data;
 
@@ -226,7 +226,7 @@ websocket_read(void *data, char *dest, size_t len)
 }
 
 static int
-websocket_write(void *data, char *dest, size_t len)
+websocket_write(void *data, unsigned char *dest, size_t len)
 {
 	WEBSOCKET *websock = (WEBSOCKET *)data;
 
